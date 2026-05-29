@@ -9,7 +9,7 @@
 - Storage: LanceDB (fallback InMemory) (`storage/`)
 - Ingestion: Docling + fallback парсеры (`ingestion/document_ingestor.py`)
 - Media ASR: `mlx-whisper` + ffmpeg (`ingestion/media_ingestor.py`)
-- LLM/VLM/Embeddings: локально через Ollama (`models/`)
+- LLM/VLM/Embeddings: локально через LM Studio или Ollama (`models/`)
 - RAG orchestration: собственная логика на Python (`app/chat_service.py`, `retrieval/`)
 
 ## 3. Основные контракты
@@ -27,6 +27,7 @@
 
 ## 5. Переменные окружения
 См. `.env.example`:
+- `RAG_MODEL_PROVIDER`, `RAG_MODEL_ENDPOINT`, `RAG_MODEL_API_KEY`
 - `RAG_DB_DIR`, `RAG_UPLOAD_DIR`, `RAG_EXTRACT_DIR`
 - `RAG_CHAT_MODEL`, `RAG_VISION_MODEL`, `RAG_EMBED_MODEL`, `RAG_WHISPER_MODEL`
 - `RAG_TOP_K`, `RAG_MAX_CONTEXT_MESSAGES`, `RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP`

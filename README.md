@@ -12,6 +12,15 @@ cp .env.example .env
 make run
 ```
 
+## LM Studio (рекомендуется)
+
+1. В LM Studio включите `Local Server` на `http://127.0.0.1:1234`.
+2. Загрузите chat/vision модель (например `google/gemma-4-e4b`).
+3. Проверьте в `.env`:
+   - `RAG_MODEL_PROVIDER=lmstudio`
+   - `RAG_MODEL_ENDPOINT=http://127.0.0.1:1234`
+4. Откройте UI, нажмите `Add demo` -> `Ingest files` -> `Quick summary`.
+
 ## Ключевые команды
 
 - `make run` — запуск Streamlit UI.
