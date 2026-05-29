@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import html
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
@@ -21,6 +22,8 @@ from app.logging_utils import configure_logging
 settings = load_settings()
 configure_logging(settings.log_level)
 
+st.set_page_config(page_title="NotebookLocal", layout="wide")
+
 
 @st.cache_resource(show_spinner=False)
 def _get_components():
@@ -30,21 +33,155 @@ def _get_components():
 store, model_manager, pipeline, retriever = _get_components()
 chat_service = ChatService(retriever=retriever, model_manager=model_manager, top_k=settings.top_k)
 
-st.set_page_config(page_title="NotebookLocal", layout="wide")
-
 st.markdown(
     """
 <style>
-.block-container {padding-top: 0.8rem;}
-.small-muted {color: #6b7280; font-size: 0.88rem;}
-.src-wrap {margin-top: 8px; display:flex; flex-wrap:wrap; gap:6px;}
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --bg-main: #eef2f6;
+  --bg-shell: #e5eaf1;
+  --bg-card: #f7f9fc;
+  --bg-soft: #edf2f8;
+  --text-main: #2f3442;
+  --text-muted: #6f7788;
+  --line: #cfd7e4;
+  --accent: #ff5d52;
+  --accent-soft: #ffe1dd;
+  --radius-lg: 20px;
+  --radius-md: 14px;
+}
+
+html, body, [class*="css"] {
+  font-family: "Manrope", "Segoe UI", sans-serif;
+}
+
+[data-testid="stAppViewContainer"] {
+  background:
+    radial-gradient(1200px 500px at -5% -10%, #f5f8fd 0%, transparent 60%),
+    radial-gradient(900px 420px at 105% 0%, #f3f6fb 0%, transparent 55%),
+    var(--bg-main);
+}
+
+[data-testid="stHeader"] {
+  background: rgba(238, 242, 246, 0.72);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #dde3ec;
+}
+
+.stAppDeployButton,
+[data-testid="stToolbar"],
+[data-testid="stDecoration"] {
+  display: none !important;
+}
+
+.main .block-container {
+  padding-top: 3.35rem;
+  padding-bottom: 1.25rem;
+  max-width: 1760px;
+}
+
+.workspace-shell {
+  background: var(--bg-shell);
+  border: 1px solid #d6ddea;
+  border-radius: 26px;
+  padding: 14px;
+  box-shadow: 0 16px 40px rgba(27, 37, 56, 0.08);
+}
+
+[data-testid="stHorizontalBlock"] > div {
+  transition: all 260ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+[data-testid="stVerticalBlockBorderWrapper"] {
+  border-radius: var(--radius-lg) !important;
+  border-color: var(--line) !important;
+  background: var(--bg-card);
+}
+
+.stSubheader {
+  color: var(--text-main);
+  font-weight: 800;
+}
+
+.small-muted {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.upload-note {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  margin-top: 0.1rem;
+  margin-bottom: 0.55rem;
+}
+
+.src-wrap {
+  margin-top: 9px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .src-chip {
   font-size: 0.78rem;
-  padding: 3px 8px;
+  padding: 4px 9px;
   border-radius: 999px;
-  border: 1px solid #d1d5db;
-  background: #f8fafc;
+  border: 1px solid #d2d9e5;
+  background: #f8fbff;
+  color: #334055;
   cursor: help;
+  transition: transform 120ms ease, border-color 120ms ease;
+}
+
+.src-chip:hover {
+  transform: translateY(-1px);
+  border-color: #b6c2d3;
+}
+
+.st-key-studio-output {
+  background: var(--bg-soft);
+  border-radius: var(--radius-md);
+  border: 1px dashed #cdd8e8;
+  padding: 2px;
+}
+
+.studio-line {
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid #d7e0ed;
+  background: #f9fcff;
+  margin-bottom: 8px;
+}
+
+.studio-mode button {
+  border-radius: 12px !important;
+}
+
+.st-key-source-search input,
+.st-key-chat-input textarea,
+.stChatInputContainer textarea {
+  background: #f4f7fb !important;
+}
+
+[data-testid="stFileUploaderDropzone"] {
+  background: #f0f4fa;
+  border: 1px dashed #c8d2df;
+  border-radius: 14px;
+}
+
+[data-testid="stFileUploaderDropzone"]:hover {
+  border-color: #9fb2c9;
+  background: #eef3f9;
+}
+
+.stButton > button {
+  border-radius: 12px;
+}
+
+.stButton > button[kind="primary"] {
+  background: linear-gradient(180deg, #ff6e63, #ef564a);
+  border: 0;
 }
 </style>
 """,
@@ -63,6 +200,8 @@ if "sources_collapsed" not in st.session_state:
     st.session_state.sources_collapsed = False
 if "studio_collapsed" not in st.session_state:
     st.session_state.studio_collapsed = False
+if "studio_outputs" not in st.session_state:
+    st.session_state.studio_outputs = []
 
 
 def _safe_upload_path(file_name: str, file_hash: str) -> Path:
@@ -117,7 +256,7 @@ def _auto_ingest_uploaded(uploaded_files) -> None:
     with st.spinner(f"Индексирую {len(new_paths)} файл(ов)..."):
         rows = _ingest_paths(new_paths)
 
-    ok = sum(1 for r in rows if not r["errors"])
+    ok = sum(1 for row in rows if not row["errors"])
     st.toast(f"Добавлено {ok}/{len(rows)} источников")
 
 
@@ -162,37 +301,55 @@ def _run_query(query: str) -> None:
     )
 
 
-if st.session_state.sources_collapsed and st.session_state.studio_collapsed:
-    widths = [0.22, 3.6, 0.22]
-elif st.session_state.sources_collapsed:
-    widths = [0.22, 2.8, 1.45]
-elif st.session_state.studio_collapsed:
-    widths = [1.45, 2.8, 0.22]
-else:
-    widths = [1.45, 2.2, 1.45]
+def _push_studio_output(mode_name: str) -> None:
+    st.session_state.studio_outputs.append(
+        {
+            "mode": mode_name,
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "status": "Режим пока в разработке. Здесь появится результат генерации по выбранному режиму.",
+        }
+    )
 
-left_col, mid_col, right_col = st.columns(widths)
+
+if st.session_state.sources_collapsed and st.session_state.studio_collapsed:
+    widths = [0.35, 4.2, 0.35]
+elif st.session_state.sources_collapsed:
+    widths = [0.35, 2.75, 1.75]
+elif st.session_state.studio_collapsed:
+    widths = [1.75, 2.75, 0.35]
+else:
+    widths = [1.75, 2.5, 1.75]
+
+st.markdown("<div class='workspace-shell'>", unsafe_allow_html=True)
+left_col, mid_col, right_col = st.columns(widths, gap="medium")
 
 with left_col:
     if st.session_state.sources_collapsed:
-        if st.button("▶ Источники", use_container_width=True):
-            st.session_state.sources_collapsed = False
-            st.rerun()
+        with st.container(border=True):
+            if st.button("▶", key="expand_left_panel", help="Развернуть источники", use_container_width=True):
+                st.session_state.sources_collapsed = False
+                st.rerun()
     else:
         with st.container(border=True):
-            l1, l2 = st.columns([6, 1])
-            l1.subheader("Источники")
-            if l2.button("◀", help="Свернуть", use_container_width=True):
+            header_l, header_r = st.columns([7, 1])
+            header_l.subheader("Источники")
+            if header_r.button("◀", key="collapse_left_panel", help="Свернуть", use_container_width=True):
                 st.session_state.sources_collapsed = True
                 st.rerun()
 
+            st.caption("Добавьте источники (drag & drop)")
             uploaded = st.file_uploader(
-                "Добавьте источники (drag & drop)",
+                "Загрузка источников",
                 accept_multiple_files=True,
                 type=["pdf", "docx", "pptx", "xlsx", "txt", "md", "png", "jpg", "jpeg", "mp3", "wav", "mp4", "mov"],
                 key="source_uploader",
+                label_visibility="collapsed",
             )
             _auto_ingest_uploaded(uploaded)
+            st.markdown(
+                "<div class='upload-note'>200MB per file • PDF, DOCX, PPTX, XLSX, TXT, MD, PNG, JPG, MP3, WAV, MP4</div>",
+                unsafe_allow_html=True,
+            )
 
             if st.button("Добавить демо", use_container_width=True):
                 demo = settings.upload_dir / "demo_notebook_source.txt"
@@ -204,7 +361,7 @@ with left_col:
                 _ingest_paths([demo])
                 st.toast("Демо-источник добавлен")
 
-            query_sources = st.text_input("Поиск по источникам", "")
+            query_sources = st.text_input("Поиск по источникам", "", key="source-search")
             files = st.session_state.ingested_files
             if query_sources.strip():
                 files = [row for row in files if query_sources.lower() in Path(row["path"]).name.lower()]
@@ -220,10 +377,11 @@ with left_col:
 with mid_col:
     with st.container(border=True):
         st.subheader("Чат")
-        q1, q2 = st.columns(2)
-        if q1.button("Краткая сводка", use_container_width=True):
+
+        quick_a, quick_b = st.columns(2)
+        if quick_a.button("Краткая сводка", use_container_width=True):
             st.session_state.pending_query = "Сделай краткую сводку по загруженным источникам в 5 пунктах"
-        if q2.button("Ключевые факты", use_container_width=True):
+        if quick_b.button("Ключевые факты", use_container_width=True):
             st.session_state.pending_query = "Какие ключевые факты есть в загруженных источниках?"
 
         for message in st.session_state.messages:
@@ -256,34 +414,44 @@ with mid_col:
 
 with right_col:
     if st.session_state.studio_collapsed:
-        if st.button("Студия ◀", use_container_width=True):
-            st.session_state.studio_collapsed = False
-            st.rerun()
+        with st.container(border=True):
+            if st.button("▶", key="expand_right_panel", help="Развернуть студию", use_container_width=True):
+                st.session_state.studio_collapsed = False
+                st.rerun()
     else:
         with st.container(border=True):
-            r1, r2 = st.columns([6, 1])
-            r1.subheader("Студия")
-            if r2.button("▶", help="Свернуть", use_container_width=True):
+            header_l, header_r = st.columns([7, 1])
+            header_l.subheader("Студия")
+            if header_r.button("▶", key="collapse_right_panel", help="Свернуть", use_container_width=True):
                 st.session_state.studio_collapsed = True
                 st.rerun()
 
-            mode_cols_1 = st.columns(2)
-            if mode_cols_1[0].button("Аудиопересказ", use_container_width=True):
-                st.info("Режим в разработке")
-            if mode_cols_1[1].button("Конспект", use_container_width=True):
-                st.info("Режим в разработке")
+            mode_grid = [
+                ("Аудиопересказ", "Конспект"),
+                ("Карта ментальная", "Карточки"),
+                ("Презентация", "Квиз"),
+            ]
+            for left_mode, right_mode in mode_grid:
+                c1, c2 = st.columns(2)
+                if c1.button(left_mode, use_container_width=True, key=f"mode_{left_mode}"):
+                    _push_studio_output(left_mode)
+                if c2.button(right_mode, use_container_width=True, key=f"mode_{right_mode}"):
+                    _push_studio_output(right_mode)
 
-            mode_cols_2 = st.columns(2)
-            if mode_cols_2[0].button("Карта ментальная", use_container_width=True):
-                st.info("Режим в разработке")
-            if mode_cols_2[1].button("Карточки", use_container_width=True):
-                st.info("Режим в разработке")
-
-            mode_cols_3 = st.columns(2)
-            if mode_cols_3[0].button("Презентация", use_container_width=True):
-                st.info("Режим в разработке")
-            if mode_cols_3[1].button("Квиз", use_container_width=True):
-                st.info("Режим в разработке")
+            st.markdown("##### Вывод студии")
+            with st.container(border=True, key="studio-output", height=210):
+                outputs = st.session_state.studio_outputs
+                if not outputs:
+                    st.info("Здесь будут появляться результаты режимов: аудио, конспект, карта, карточки, презентация, квиз.")
+                else:
+                    for item in outputs[-6:][::-1]:
+                        mode = html.escape(item["mode"])
+                        status = html.escape(item["status"])
+                        when = html.escape(item["time"])
+                        st.markdown(
+                            f"<div class='studio-line'><b>{mode}</b> · <span class='small-muted'>{when}</span><br>{status}</div>",
+                            unsafe_allow_html=True,
+                        )
 
             st.divider()
             health = "онлайн" if model_manager.healthcheck() else "офлайн"
@@ -301,6 +469,8 @@ with right_col:
                     st.error("Сервер модели недоступен")
 
             st.caption("Локальный режим. Без OpenRouter.")
+
+st.markdown("</div>", unsafe_allow_html=True)
 
 if len(st.session_state.messages) > settings.max_context_messages * 2:
     st.session_state.messages = st.session_state.messages[-settings.max_context_messages * 2 :]
