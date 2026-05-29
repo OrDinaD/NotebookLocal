@@ -19,7 +19,7 @@ make run
 3. Проверьте в `.env`:
    - `RAG_MODEL_PROVIDER=lmstudio`
    - `RAG_MODEL_ENDPOINT=http://127.0.0.1:1234`
-4. Откройте UI, нажмите `Add demo` -> `Ingest files` -> `Quick summary`.
+4. Откройте UI, нажмите `Добавить демо` -> `Обработать файлы` -> `Краткая сводка`.
 
 ## Ключевые команды
 

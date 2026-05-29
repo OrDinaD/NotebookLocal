@@ -21,7 +21,7 @@ configure_logging(settings.log_level)
 store, model_manager, pipeline, retriever = build_components(settings)
 chat_service = ChatService(retriever=retriever, model_manager=model_manager, top_k=settings.top_k)
 
-st.set_page_config(page_title="NotebookLite Local RAG", layout="wide")
+st.set_page_config(page_title="NotebookLite Локальный RAG", layout="wide")
 
 st.markdown(
     """
@@ -46,7 +46,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("NotebookLite • Local Multimodal RAG")
+st.title("NotebookLite • Локальный мультимодальный RAG")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -71,14 +71,29 @@ def _ingest_paths(paths: list[Path]) -> None:
 
 
 def _run_query(query: str) -> None:
+    if store.count() == 0:
+        st.session_state.messages.append({"role": "user", "content": query})
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": (
+                    "Пока нет проиндексированных источников. "
+                    "Сначала нажмите «Обработать файлы» (или «Добавить демо»), "
+                    "а затем повторите запрос."
+                ),
+                "images": [],
+            }
+        )
+        return
+
     st.session_state.messages.append({"role": "user", "content": query})
     answer = chat_service.answer(query, st.session_state.messages)
 
     response_text = answer.text
     if answer.cited_records:
-        response_text += "\n\nSources:\n"
+        response_text += "\n\nИсточники:\n"
         for rec in answer.cited_records:
-            response_text += f"- [{Path(rec.source_uri).name}] score={rec.score:.4f}\n"
+            response_text += f"- [{Path(rec.source_uri).name}] релевантность={rec.score:.4f}\n"
 
     st.session_state.messages.append(
         {
@@ -93,8 +108,8 @@ left_col, mid_col, right_col = st.columns([1.1, 2.2, 1.1])
 
 with left_col:
     st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.subheader("Sources")
-    st.caption("1) Добавьте файлы  2) Нажмите Ingest")
+    st.subheader("Источники")
+    st.caption("1) Добавьте файлы  2) Нажмите «Обработать файлы»")
 
     uploaded = st.file_uploader(
         "",
@@ -105,9 +120,9 @@ with left_col:
 
     c1, c2 = st.columns(2)
     with c1:
-        ingest_clicked = st.button("Ingest files", use_container_width=True, type="primary")
+        ingest_clicked = st.button("Обработать файлы", use_container_width=True, type="primary")
     with c2:
-        demo_clicked = st.button("Add demo", use_container_width=True)
+        demo_clicked = st.button("Добавить демо", use_container_width=True)
 
     if ingest_clicked:
         if not uploaded:
@@ -119,7 +134,7 @@ with left_col:
                 out_path.write_bytes(file.getbuffer())
                 paths.append(out_path)
             _ingest_paths(paths)
-            st.success("Ingestion done")
+            st.success("Обработка завершена")
 
     if demo_clicked:
         demo = settings.upload_dir / "demo_notebook_source.txt"
@@ -129,36 +144,36 @@ with left_col:
             encoding="utf-8",
         )
         _ingest_paths([demo])
-        st.success("Demo source added")
+        st.success("Демо-источник добавлен")
 
-    q = st.text_input("Search sources", "")
+    q = st.text_input("Поиск по источникам", "")
     files = st.session_state.ingested_files
     if q.strip():
         files = [row for row in files if q.lower() in Path(row["path"]).name.lower()]
 
-    st.markdown("<div class='small-muted'>Loaded sources</div>", unsafe_allow_html=True)
+    st.markdown("<div class='small-muted'>Загруженные источники</div>", unsafe_allow_html=True)
     if not files:
         st.info("Пока нет источников")
     for row in files[-25:]:
         name = Path(row["path"]).name
         err = len(row["errors"])
-        st.markdown(f"- **{name}** · chunks {row['chunks']} · images {row['images']} · errors {err}")
+        st.markdown(f"- **{name}** · фрагменты {row['chunks']} · изображения {row['images']} · ошибок {err}")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
 with mid_col:
     st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.subheader("Chat")
+    st.subheader("Чат")
 
     q1, q2, q3 = st.columns(3)
     with q1:
-        if st.button("Quick summary", use_container_width=True):
+        if st.button("Краткая сводка", use_container_width=True):
             st.session_state.pending_query = "Сделай краткую сводку по загруженным источникам в 5 пунктах"
     with q2:
-        if st.button("Key facts", use_container_width=True):
+        if st.button("Ключевые факты", use_container_width=True):
             st.session_state.pending_query = "Какие ключевые факты и требования есть в источниках?"
     with q3:
-        if st.button("Risks", use_container_width=True):
+        if st.button("Риски", use_container_width=True):
             st.session_state.pending_query = "Какие риски и пробелы в данных ты видишь?"
 
     for message in st.session_state.messages:
@@ -183,27 +198,27 @@ with mid_col:
 
 with right_col:
     st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.subheader("Studio")
+    st.subheader("Студия")
 
-    health = "online" if model_manager.healthcheck() else "offline"
-    st.markdown(f"<div class='kpi'><b>Provider:</b> {settings.model_provider}</div>", unsafe_allow_html=True)
+    health = "онлайн" if model_manager.healthcheck() else "офлайн"
+    st.markdown(f"<div class='kpi'><b>Провайдер:</b> {settings.model_provider}</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='kpi'><b>Endpoint:</b> {settings.model_endpoint}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='kpi'><b>Model server:</b> {health}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='kpi'><b>Store records:</b> {store.count()}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='kpi'><b>Chat model:</b> {settings.chat_model}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='kpi'><b>Vision model:</b> {settings.vision_model}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='kpi'><b>Сервер модели:</b> {health}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='kpi'><b>Записей в базе:</b> {store.count()}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='kpi'><b>Модель чата:</b> {settings.chat_model}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='kpi'><b>Vision-модель:</b> {settings.vision_model}</div>", unsafe_allow_html=True)
 
-    if st.button("Ping model server", use_container_width=True):
+    if st.button("Проверить сервер модели", use_container_width=True):
         if model_manager.healthcheck():
-            st.success("Model server reachable")
+            st.success("Сервер модели доступен")
         else:
-            st.error("Model server is not reachable")
+            st.error("Сервер модели недоступен")
 
-    if st.button("First steps checklist", use_container_width=True):
+    if st.button("Чеклист первых шагов", use_container_width=True):
         st.info(
-            "1) Add demo или загрузите 1-2 файла.\n"
-            "2) Нажмите Ingest files.\n"
-            "3) Нажмите Quick summary или задайте свой вопрос."
+            "1) Нажмите «Добавить демо» или загрузите 1–2 файла.\n"
+            "2) Нажмите «Обработать файлы».\n"
+            "3) Нажмите «Краткая сводка» или задайте свой вопрос."
         )
 
     st.markdown("<div class='small-muted'>Локальный режим. Без OpenRouter.</div>", unsafe_allow_html=True)
