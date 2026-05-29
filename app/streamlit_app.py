@@ -18,7 +18,14 @@ from app.logging_utils import configure_logging
 
 settings = load_settings()
 configure_logging(settings.log_level)
-store, model_manager, pipeline, retriever = build_components(settings)
+
+
+@st.cache_resource(show_spinner=False)
+def _get_components():
+    return build_components(settings)
+
+
+store, model_manager, pipeline, retriever = _get_components()
 chat_service = ChatService(retriever=retriever, model_manager=model_manager, top_k=settings.top_k)
 
 st.set_page_config(page_title="NotebookLite Локальный RAG", layout="wide")
