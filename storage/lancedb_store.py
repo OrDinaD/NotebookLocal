@@ -80,5 +80,25 @@ class LanceDBVectorStore(VectorStore):
         return records[:top_k]
 
     def count(self) -> int:
-        rows = self._table.to_list()
+        # LanceDB API differs by version: prefer count_rows, fallback to table exports.
+        try:
+            return int(self._table.count_rows("id != 'bootstrap'"))
+        except Exception:
+            pass
+
+        try:
+            return int(self._table.count_rows())
+        except Exception:
+            pass
+
+        rows: list[dict] = []
+        try:
+            rows = self._table.to_arrow().to_pylist()
+        except Exception:
+            try:
+                rows = self._table.to_pandas().to_dict(orient="records")
+            except Exception:
+                logger.exception("Failed to count LanceDB rows")
+                return 0
+
         return sum(1 for row in rows if row.get("id") != "bootstrap")
