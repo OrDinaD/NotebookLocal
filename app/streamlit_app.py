@@ -112,7 +112,7 @@ with left_col:
     st.caption("1) Добавьте файлы  2) Нажмите «Обработать файлы»")
 
     uploaded = st.file_uploader(
-        "",
+        "Загрузка источников",
         accept_multiple_files=True,
         type=["pdf", "docx", "pptx", "xlsx", "txt", "md", "png", "jpg", "jpeg", "mp3", "wav", "mp4", "mov"],
         label_visibility="collapsed",
