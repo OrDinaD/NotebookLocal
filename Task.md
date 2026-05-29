@@ -3,7 +3,7 @@
 ## Milestone 0: Project bootstrap
 - [x] Создана структура директорий (`app/`, `ingestion/`, `retrieval/`, `models/`, `storage/`, `tests/`, `sample_data/`).
 - [x] Добавлены `.env.example`, `requirements.txt`, `Makefile`, `.gitignore`.
-- [x] Добавлен базовый Streamlit UI.
+- [x] Добавлен короткий NotebookLM-подобный Streamlit UI (`Sources / Chat / Studio`).
 - DoD: `streamlit run app/streamlit_app.py` стартует без crash.
 - Verification artifact: локальный запуск и UI с секцией upload/chat.
 
@@ -42,6 +42,7 @@
 - [x] Контекст собирается из retrieval результатов.
 - [x] В ответе показываются источники и связанные изображения (`st.image`).
 - [x] История хранится в `st.session_state.messages`.
+- [x] Добавлены quick actions для первых шагов (`Add demo`, `Quick summary`, `First steps checklist`).
 - DoD: чат отвечает по индексу и отображает image-uri при наличии.
 - Verification artifact: `app/streamlit_app.py`, `app/chat_service.py`.
 
