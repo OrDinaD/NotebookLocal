@@ -7,10 +7,7 @@ from pathlib import Path
 from ingestion.chunking import chunk_text
 from models.schemas import ImageAsset, IngestionError, IngestionResult, Modality, TableAsset, TextChunk
 
-try:
-    from docling.document_converter import DocumentConverter
-except Exception:  # pragma: no cover - optional at test time
-    DocumentConverter = None
+DocumentConverter = None
 
 try:
     import docx
@@ -68,8 +65,13 @@ class DocumentIngestor:
         result = IngestionResult(source_uri=str(source_path), modality=Modality.document)
         docling_used = False
 
-        if self.use_docling and DocumentConverter is not None:
+        if self.use_docling:
             try:
+                global DocumentConverter
+                if DocumentConverter is None:
+                    from docling.document_converter import DocumentConverter as _DocumentConverter
+
+                    DocumentConverter = _DocumentConverter
                 converter = DocumentConverter()
                 converted = converter.convert(str(source_path))
                 text = converted.document.export_to_markdown()
