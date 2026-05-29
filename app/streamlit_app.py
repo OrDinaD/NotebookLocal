@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import html
 import sys
 from pathlib import Path
 
@@ -28,17 +30,24 @@ def _get_components():
 store, model_manager, pipeline, retriever = _get_components()
 chat_service = ChatService(retriever=retriever, model_manager=model_manager, top_k=settings.top_k)
 
-st.set_page_config(page_title="NotebookLite Локальный RAG", layout="wide")
+st.set_page_config(page_title="NotebookLocal", layout="wide")
 
 st.markdown(
     """
 <style>
-.block-container {padding-top: 1rem;}
+.block-container {padding-top: 0.7rem;}
 .panel {
   border: 1px solid #e5e7eb;
   border-radius: 14px;
-  padding: 14px;
+  padding: 12px;
   background: #ffffff;
+  min-height: 78vh;
+}
+.panel-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
 }
 .kpi {
   border: 1px solid #e5e7eb;
@@ -48,12 +57,26 @@ st.markdown(
   margin-bottom: 8px;
 }
 .small-muted {color: #6b7280; font-size: 0.88rem;}
+.src-wrap {margin-top: 8px; display:flex; flex-wrap:wrap; gap:6px;}
+.src-chip {
+  font-size: 0.78rem;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #f8fafc;
+  cursor: help;
+}
+.mode-btn {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fafafa;
+  text-align: left;
+}
 </style>
 """,
     unsafe_allow_html=True,
 )
-
-st.title("NotebookLite • Локальный мультимодальный RAG")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -61,20 +84,69 @@ if "ingested_files" not in st.session_state:
     st.session_state.ingested_files = []
 if "pending_query" not in st.session_state:
     st.session_state.pending_query = None
+if "processed_upload_hashes" not in st.session_state:
+    st.session_state.processed_upload_hashes = set()
+if "sources_collapsed" not in st.session_state:
+    st.session_state.sources_collapsed = False
+if "studio_collapsed" not in st.session_state:
+    st.session_state.studio_collapsed = False
 
 
-def _ingest_paths(paths: list[Path]) -> None:
+def _safe_upload_path(file_name: str, file_hash: str) -> Path:
+    path = settings.upload_dir / file_name
+    if not path.exists():
+        return path
+    try:
+        existing_hash = hashlib.sha1(path.read_bytes()).hexdigest()
+        if existing_hash == file_hash:
+            return path
+    except Exception:
+        pass
+    stem = path.stem
+    suffix = path.suffix
+    return settings.upload_dir / f"{stem}_{file_hash[:8]}{suffix}"
+
+
+def _ingest_paths(paths: list[Path]) -> list[dict]:
+    results: list[dict] = []
     for out_path in paths:
         result, indexed = pipeline.ingest_and_index(out_path)
-        st.session_state.ingested_files.append(
-            {
-                "path": str(out_path),
-                "chunks": len(result.text_chunks),
-                "images": len(result.image_assets),
-                "errors": [err.message for err in result.errors],
-                "indexed": len(indexed),
-            }
-        )
+        row = {
+            "path": str(out_path),
+            "chunks": len(result.text_chunks),
+            "images": len(result.image_assets),
+            "errors": [err.message for err in result.errors],
+            "indexed": len(indexed),
+        }
+        st.session_state.ingested_files.append(row)
+        results.append(row)
+    return results
+
+
+def _auto_ingest_uploaded(uploaded_files) -> None:
+    if not uploaded_files:
+        return
+    new_paths: list[Path] = []
+    new_names: list[str] = []
+    for file in uploaded_files:
+        payload = file.getvalue()
+        file_hash = hashlib.sha1(payload).hexdigest()
+        if file_hash in st.session_state.processed_upload_hashes:
+            continue
+        out_path = _safe_upload_path(file.name, file_hash)
+        out_path.write_bytes(payload)
+        st.session_state.processed_upload_hashes.add(file_hash)
+        new_paths.append(out_path)
+        new_names.append(file.name)
+
+    if not new_paths:
+        return
+
+    with st.spinner(f"Индексирую {len(new_paths)} файл(ов)..."):
+        rows = _ingest_paths(new_paths)
+
+    ok = sum(1 for r in rows if not r["errors"])
+    st.toast(f"Добавлено {ok}/{len(rows)} источников")
 
 
 def _run_query(query: str) -> None:
@@ -85,10 +157,10 @@ def _run_query(query: str) -> None:
                 "role": "assistant",
                 "content": (
                     "Пока нет проиндексированных источников. "
-                    "Сначала нажмите «Обработать файлы» (или «Добавить демо»), "
-                    "а затем повторите запрос."
+                    "Перетащите файл в панель «Источники» и дождитесь завершения индексации."
                 ),
                 "images": [],
+                "citations": [],
             }
         )
         return
@@ -96,96 +168,117 @@ def _run_query(query: str) -> None:
     st.session_state.messages.append({"role": "user", "content": query})
     answer = chat_service.answer(query, st.session_state.messages)
 
-    response_text = answer.text
-    if answer.cited_records:
-        response_text += "\n\nИсточники:\n"
-        for rec in answer.cited_records:
-            response_text += f"- [{Path(rec.source_uri).name}] релевантность={rec.score:.4f}\n"
+    citations = []
+    for rec in answer.cited_records:
+        snippet = " ".join((rec.text or "").split())[:320]
+        citations.append(
+            {
+                "source_name": Path(rec.source_uri).name,
+                "source_uri": rec.source_uri,
+                "score": rec.score,
+                "snippet": snippet,
+            }
+        )
 
     st.session_state.messages.append(
         {
             "role": "assistant",
-            "content": response_text,
+            "content": answer.text,
             "images": answer.image_uris,
+            "citations": citations,
         }
     )
 
 
-left_col, mid_col, right_col = st.columns([1.1, 2.2, 1.1])
+# Top controls for panel collapsing.
+top_left, top_mid, top_right = st.columns([1.2, 6.0, 1.2])
+with top_left:
+    if st.button("◀ Источники" if not st.session_state.sources_collapsed else "▶ Источники", use_container_width=True):
+        st.session_state.sources_collapsed = not st.session_state.sources_collapsed
+        st.rerun()
+with top_right:
+    if st.button("Студия ▶" if not st.session_state.studio_collapsed else "Студия ◀", use_container_width=True):
+        st.session_state.studio_collapsed = not st.session_state.studio_collapsed
+        st.rerun()
+
+if st.session_state.sources_collapsed and st.session_state.studio_collapsed:
+    widths = [0.15, 3.9, 0.15]
+elif st.session_state.sources_collapsed:
+    widths = [0.15, 2.9, 1.25]
+elif st.session_state.studio_collapsed:
+    widths = [1.25, 2.9, 0.15]
+else:
+    widths = [1.25, 2.2, 1.25]
+
+left_col, mid_col, right_col = st.columns(widths)
 
 with left_col:
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.subheader("Источники")
-    st.caption("1) Добавьте файлы  2) Нажмите «Обработать файлы»")
+    if st.session_state.sources_collapsed:
+        st.markdown('<div class="panel">', unsafe_allow_html=True)
+        st.caption("Панель источников скрыта")
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="panel">', unsafe_allow_html=True)
+        st.markdown('<div class="panel-title"><h3 style="margin:0">Источники</h3></div>', unsafe_allow_html=True)
 
-    uploaded = st.file_uploader(
-        "Загрузка источников",
-        accept_multiple_files=True,
-        type=["pdf", "docx", "pptx", "xlsx", "txt", "md", "png", "jpg", "jpeg", "mp3", "wav", "mp4", "mov"],
-        label_visibility="collapsed",
-    )
-
-    c1, c2 = st.columns(2)
-    with c1:
-        ingest_clicked = st.button("Обработать файлы", use_container_width=True, type="primary")
-    with c2:
-        demo_clicked = st.button("Добавить демо", use_container_width=True)
-
-    if ingest_clicked:
-        if not uploaded:
-            st.warning("Выберите файлы")
-        else:
-            paths: list[Path] = []
-            for file in uploaded:
-                out_path = settings.upload_dir / file.name
-                out_path.write_bytes(file.getbuffer())
-                paths.append(out_path)
-            _ingest_paths(paths)
-            st.success("Обработка завершена")
-
-    if demo_clicked:
-        demo = settings.upload_dir / "demo_notebook_source.txt"
-        demo.write_text(
-            "Проект: NotebookLite. Цель: локальный анализ документов и медиа. "
-            "Ключевые функции: ingestion, retrieval, chat, citations, image rendering.",
-            encoding="utf-8",
+        uploaded = st.file_uploader(
+            "Добавьте источники (drag & drop)",
+            accept_multiple_files=True,
+            type=["pdf", "docx", "pptx", "xlsx", "txt", "md", "png", "jpg", "jpeg", "mp3", "wav", "mp4", "mov"],
+            key="source_uploader",
         )
-        _ingest_paths([demo])
-        st.success("Демо-источник добавлен")
+        _auto_ingest_uploaded(uploaded)
 
-    q = st.text_input("Поиск по источникам", "")
-    files = st.session_state.ingested_files
-    if q.strip():
-        files = [row for row in files if q.lower() in Path(row["path"]).name.lower()]
+        if st.button("Добавить демо", use_container_width=True):
+            demo = settings.upload_dir / "demo_notebook_source.txt"
+            demo.write_text(
+                "Проект: NotebookLocal. Цель: локальный анализ документов и медиа. "
+                "Ключевые функции: ingestion, retrieval, chat, citations, image rendering.",
+                encoding="utf-8",
+            )
+            _ingest_paths([demo])
+            st.toast("Демо-источник добавлен")
 
-    st.markdown("<div class='small-muted'>Загруженные источники</div>", unsafe_allow_html=True)
-    if not files:
-        st.info("Пока нет источников")
-    for row in files[-25:]:
-        name = Path(row["path"]).name
-        err = len(row["errors"])
-        st.markdown(f"- **{name}** · фрагменты {row['chunks']} · изображения {row['images']} · ошибок {err}")
+        query_sources = st.text_input("Поиск по источникам", "")
+        files = st.session_state.ingested_files
+        if query_sources.strip():
+            files = [row for row in files if query_sources.lower() in Path(row["path"]).name.lower()]
 
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("<div class='small-muted'>Загруженные источники</div>", unsafe_allow_html=True)
+        if not files:
+            st.info("Пока нет источников")
+        for row in files[-30:]:
+            name = Path(row["path"]).name
+            err = len(row["errors"])
+            st.markdown(f"- **{name}** · фрагменты {row['chunks']} · изображения {row['images']} · ошибок {err}")
+
+        st.markdown('</div>', unsafe_allow_html=True)
 
 with mid_col:
     st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.subheader("Чат")
+    st.markdown('<div class="panel-title"><h3 style="margin:0">Чат</h3></div>', unsafe_allow_html=True)
 
-    q1, q2, q3 = st.columns(3)
+    q1, q2 = st.columns(2)
     with q1:
         if st.button("Краткая сводка", use_container_width=True):
             st.session_state.pending_query = "Сделай краткую сводку по загруженным источникам в 5 пунктах"
     with q2:
         if st.button("Ключевые факты", use_container_width=True):
-            st.session_state.pending_query = "Какие ключевые факты и требования есть в источниках?"
-    with q3:
-        if st.button("Риски", use_container_width=True):
-            st.session_state.pending_query = "Какие риски и пробелы в данных ты видишь?"
+            st.session_state.pending_query = "Какие ключевые факты есть в загруженных источниках?"
 
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
+
+            citations = message.get("citations", [])
+            if citations:
+                chips = []
+                for idx, cite in enumerate(citations, start=1):
+                    tip = html.escape(f"{cite['source_name']} | {cite['snippet']}")
+                    label = html.escape(cite["source_name"])
+                    chips.append(f"<span class='src-chip' title='{tip}'>[{idx}] {label}</span>")
+                st.markdown("<div class='src-wrap'>" + "".join(chips) + "</div>", unsafe_allow_html=True)
+
             for image_uri in message.get("images", []):
                 p = Path(image_uri)
                 if p.exists():
@@ -204,32 +297,50 @@ with mid_col:
     st.markdown('</div>', unsafe_allow_html=True)
 
 with right_col:
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.subheader("Студия")
+    if st.session_state.studio_collapsed:
+        st.markdown('<div class="panel">', unsafe_allow_html=True)
+        st.caption("Панель студии скрыта")
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="panel">', unsafe_allow_html=True)
+        st.markdown('<div class="panel-title"><h3 style="margin:0">Студия</h3></div>', unsafe_allow_html=True)
 
-    health = "онлайн" if model_manager.healthcheck() else "офлайн"
-    st.markdown(f"<div class='kpi'><b>Провайдер:</b> {settings.model_provider}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='kpi'><b>Endpoint:</b> {settings.model_endpoint}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='kpi'><b>Сервер модели:</b> {health}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='kpi'><b>Записей в базе:</b> {store.count()}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='kpi'><b>Модель чата:</b> {settings.chat_model}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='kpi'><b>Vision-модель:</b> {settings.vision_model}</div>", unsafe_allow_html=True)
+        mode_cols_1 = st.columns(2)
+        if mode_cols_1[0].button("Аудиопересказ", use_container_width=True):
+            st.info("Режим в разработке")
+        if mode_cols_1[1].button("Конспект", use_container_width=True):
+            st.info("Режим в разработке")
 
-    if st.button("Проверить сервер модели", use_container_width=True):
-        if model_manager.healthcheck():
-            st.success("Сервер модели доступен")
-        else:
-            st.error("Сервер модели недоступен")
+        mode_cols_2 = st.columns(2)
+        if mode_cols_2[0].button("Карта ментальная", use_container_width=True):
+            st.info("Режим в разработке")
+        if mode_cols_2[1].button("Карточки", use_container_width=True):
+            st.info("Режим в разработке")
 
-    if st.button("Чеклист первых шагов", use_container_width=True):
-        st.info(
-            "1) Нажмите «Добавить демо» или загрузите 1–2 файла.\n"
-            "2) Нажмите «Обработать файлы».\n"
-            "3) Нажмите «Краткая сводка» или задайте свой вопрос."
-        )
+        mode_cols_3 = st.columns(2)
+        if mode_cols_3[0].button("Презентация", use_container_width=True):
+            st.info("Режим в разработке")
+        if mode_cols_3[1].button("Квиз", use_container_width=True):
+            st.info("Режим в разработке")
 
-    st.markdown("<div class='small-muted'>Локальный режим. Без OpenRouter.</div>", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.divider()
+
+        health = "онлайн" if model_manager.healthcheck() else "офлайн"
+        st.markdown(f"<div class='kpi'><b>Провайдер:</b> {settings.model_provider}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='kpi'><b>Endpoint:</b> {settings.model_endpoint}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='kpi'><b>Сервер модели:</b> {health}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='kpi'><b>Записей в базе:</b> {store.count()}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='kpi'><b>Модель чата:</b> {settings.chat_model}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='kpi'><b>Vision-модель:</b> {settings.vision_model}</div>", unsafe_allow_html=True)
+
+        if st.button("Проверить сервер модели", use_container_width=True):
+            if model_manager.healthcheck():
+                st.success("Сервер модели доступен")
+            else:
+                st.error("Сервер модели недоступен")
+
+        st.markdown("<div class='small-muted'>Локальный режим. Без OpenRouter.</div>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 if len(st.session_state.messages) > settings.max_context_messages * 2:
     st.session_state.messages = st.session_state.messages[-settings.max_context_messages * 2 :]
