@@ -1,18 +1,36 @@
+# Python artifacts
 __pycache__/
 *.py[cod]
 *.so
 .Python
+
+# Virtual envs
 .venv/
 .venv*/
 venv/
+
+# Local env/config
 .env
+.streamlit/secrets.toml
+
+# Test/cache
 .pytest_cache/
 .mypy_cache/
 .coverage
 htmlcov/
+
+# Build/output data
 *.lance/
 *.lancedb/
 data/
 outputs/
 artifacts/
+
+# Local uploads (keep only placeholders)
+sample_data/uploads/*
+!sample_data/uploads/.gitkeep
+
+# OS/editor
 .DS_Store
+.vscode/
+.idea/
