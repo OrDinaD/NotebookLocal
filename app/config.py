@@ -21,6 +21,7 @@ class Settings:
     vision_model: str
     embed_model: str
     whisper_model: str
+    use_docling: bool
     top_k: int
     max_context_messages: int
     chunk_size: int
@@ -39,6 +40,9 @@ def load_settings(project_root: Path | None = None) -> Settings:
     for path in (data_dir, db_dir, upload_dir, extract_dir):
         path.mkdir(parents=True, exist_ok=True)
 
+    use_docling_raw = os.getenv("RAG_USE_DOCLING", "0").strip().lower()
+    use_docling = use_docling_raw in {"1", "true", "yes", "on"}
+
     return Settings(
         project_root=root,
         data_dir=data_dir,
@@ -52,6 +56,7 @@ def load_settings(project_root: Path | None = None) -> Settings:
         vision_model=os.getenv("RAG_VISION_MODEL", "google/gemma-4-e4b"),
         embed_model=os.getenv("RAG_EMBED_MODEL", "nomic-embed-text"),
         whisper_model=os.getenv("RAG_WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo"),
+        use_docling=use_docling,
         top_k=int(os.getenv("RAG_TOP_K", "5")),
         max_context_messages=int(os.getenv("RAG_MAX_CONTEXT_MESSAGES", "10")),
         chunk_size=int(os.getenv("RAG_CHUNK_SIZE", "900")),

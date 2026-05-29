@@ -39,10 +39,17 @@ logger = logging.getLogger(__name__)
 
 
 class DocumentIngestor:
-    def __init__(self, extract_dir: Path, chunk_size: int = 900, chunk_overlap: int = 150) -> None:
+    def __init__(
+        self,
+        extract_dir: Path,
+        chunk_size: int = 900,
+        chunk_overlap: int = 150,
+        use_docling: bool = False,
+    ) -> None:
         self.extract_dir = extract_dir
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+        self.use_docling = use_docling
         self.extract_dir.mkdir(parents=True, exist_ok=True)
 
     def ingest(self, source_path: Path) -> IngestionResult:
@@ -61,7 +68,7 @@ class DocumentIngestor:
         result = IngestionResult(source_uri=str(source_path), modality=Modality.document)
         docling_used = False
 
-        if DocumentConverter is not None:
+        if self.use_docling and DocumentConverter is not None:
             try:
                 converter = DocumentConverter()
                 converted = converter.convert(str(source_path))

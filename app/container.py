@@ -34,6 +34,7 @@ def build_components(settings: Settings):
         extract_dir=settings.extract_dir,
         chunk_size=settings.chunk_size,
         chunk_overlap=settings.chunk_overlap,
+        use_docling=settings.use_docling,
     )
     media_ingestor = MediaIngestor(
         whisper_model=settings.whisper_model,
