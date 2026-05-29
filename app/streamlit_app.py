@@ -35,27 +35,7 @@ st.set_page_config(page_title="NotebookLocal", layout="wide")
 st.markdown(
     """
 <style>
-.block-container {padding-top: 0.7rem;}
-.panel {
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
-  padding: 12px;
-  background: #ffffff;
-  min-height: 78vh;
-}
-.panel-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-.kpi {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 8px 10px;
-  background: #f8fafc;
-  margin-bottom: 8px;
-}
+.block-container {padding-top: 0.8rem;}
 .small-muted {color: #6b7280; font-size: 0.88rem;}
 .src-wrap {margin-top: 8px; display:flex; flex-wrap:wrap; gap:6px;}
 .src-chip {
@@ -65,13 +45,6 @@ st.markdown(
   border: 1px solid #d1d5db;
   background: #f8fafc;
   cursor: help;
-}
-.mode-btn {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 10px;
-  background: #fafafa;
-  text-align: left;
 }
 </style>
 """,
@@ -126,8 +99,8 @@ def _ingest_paths(paths: list[Path]) -> list[dict]:
 def _auto_ingest_uploaded(uploaded_files) -> None:
     if not uploaded_files:
         return
+
     new_paths: list[Path] = []
-    new_names: list[str] = []
     for file in uploaded_files:
         payload = file.getvalue()
         file_hash = hashlib.sha1(payload).hexdigest()
@@ -137,7 +110,6 @@ def _auto_ingest_uploaded(uploaded_files) -> None:
         out_path.write_bytes(payload)
         st.session_state.processed_upload_hashes.add(file_hash)
         new_paths.append(out_path)
-        new_names.append(file.name)
 
     if not new_paths:
         return
@@ -170,7 +142,7 @@ def _run_query(query: str) -> None:
 
     citations = []
     for rec in answer.cited_records:
-        snippet = " ".join((rec.text or "").split())[:320]
+        snippet = " ".join((rec.text or "").split())[:360]
         citations.append(
             {
                 "source_name": Path(rec.source_uri).name,
@@ -190,157 +162,145 @@ def _run_query(query: str) -> None:
     )
 
 
-# Top controls for panel collapsing.
-top_left, top_mid, top_right = st.columns([1.2, 6.0, 1.2])
-with top_left:
-    if st.button("◀ Источники" if not st.session_state.sources_collapsed else "▶ Источники", use_container_width=True):
-        st.session_state.sources_collapsed = not st.session_state.sources_collapsed
-        st.rerun()
-with top_right:
-    if st.button("Студия ▶" if not st.session_state.studio_collapsed else "Студия ◀", use_container_width=True):
-        st.session_state.studio_collapsed = not st.session_state.studio_collapsed
-        st.rerun()
-
 if st.session_state.sources_collapsed and st.session_state.studio_collapsed:
-    widths = [0.15, 3.9, 0.15]
+    widths = [0.22, 3.6, 0.22]
 elif st.session_state.sources_collapsed:
-    widths = [0.15, 2.9, 1.25]
+    widths = [0.22, 2.8, 1.45]
 elif st.session_state.studio_collapsed:
-    widths = [1.25, 2.9, 0.15]
+    widths = [1.45, 2.8, 0.22]
 else:
-    widths = [1.25, 2.2, 1.25]
+    widths = [1.45, 2.2, 1.45]
 
 left_col, mid_col, right_col = st.columns(widths)
 
 with left_col:
     if st.session_state.sources_collapsed:
-        st.markdown('<div class="panel">', unsafe_allow_html=True)
-        st.caption("Панель источников скрыта")
-        st.markdown('</div>', unsafe_allow_html=True)
+        if st.button("▶ Источники", use_container_width=True):
+            st.session_state.sources_collapsed = False
+            st.rerun()
     else:
-        st.markdown('<div class="panel">', unsafe_allow_html=True)
-        st.markdown('<div class="panel-title"><h3 style="margin:0">Источники</h3></div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            l1, l2 = st.columns([6, 1])
+            l1.subheader("Источники")
+            if l2.button("◀", help="Свернуть", use_container_width=True):
+                st.session_state.sources_collapsed = True
+                st.rerun()
 
-        uploaded = st.file_uploader(
-            "Добавьте источники (drag & drop)",
-            accept_multiple_files=True,
-            type=["pdf", "docx", "pptx", "xlsx", "txt", "md", "png", "jpg", "jpeg", "mp3", "wav", "mp4", "mov"],
-            key="source_uploader",
-        )
-        _auto_ingest_uploaded(uploaded)
-
-        if st.button("Добавить демо", use_container_width=True):
-            demo = settings.upload_dir / "demo_notebook_source.txt"
-            demo.write_text(
-                "Проект: NotebookLocal. Цель: локальный анализ документов и медиа. "
-                "Ключевые функции: ingestion, retrieval, chat, citations, image rendering.",
-                encoding="utf-8",
+            uploaded = st.file_uploader(
+                "Добавьте источники (drag & drop)",
+                accept_multiple_files=True,
+                type=["pdf", "docx", "pptx", "xlsx", "txt", "md", "png", "jpg", "jpeg", "mp3", "wav", "mp4", "mov"],
+                key="source_uploader",
             )
-            _ingest_paths([demo])
-            st.toast("Демо-источник добавлен")
+            _auto_ingest_uploaded(uploaded)
 
-        query_sources = st.text_input("Поиск по источникам", "")
-        files = st.session_state.ingested_files
-        if query_sources.strip():
-            files = [row for row in files if query_sources.lower() in Path(row["path"]).name.lower()]
+            if st.button("Добавить демо", use_container_width=True):
+                demo = settings.upload_dir / "demo_notebook_source.txt"
+                demo.write_text(
+                    "Проект: NotebookLocal. Цель: локальный анализ документов и медиа. "
+                    "Ключевые функции: ingestion, retrieval, chat, citations, image rendering.",
+                    encoding="utf-8",
+                )
+                _ingest_paths([demo])
+                st.toast("Демо-источник добавлен")
 
-        st.markdown("<div class='small-muted'>Загруженные источники</div>", unsafe_allow_html=True)
-        if not files:
-            st.info("Пока нет источников")
-        for row in files[-30:]:
-            name = Path(row["path"]).name
-            err = len(row["errors"])
-            st.markdown(f"- **{name}** · фрагменты {row['chunks']} · изображения {row['images']} · ошибок {err}")
+            query_sources = st.text_input("Поиск по источникам", "")
+            files = st.session_state.ingested_files
+            if query_sources.strip():
+                files = [row for row in files if query_sources.lower() in Path(row["path"]).name.lower()]
 
-        st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown("<div class='small-muted'>Загруженные источники</div>", unsafe_allow_html=True)
+            if not files:
+                st.info("Пока нет источников")
+            for row in files[-30:]:
+                name = Path(row["path"]).name
+                err = len(row["errors"])
+                st.markdown(f"- **{name}** · фрагменты {row['chunks']} · изображения {row['images']} · ошибок {err}")
 
 with mid_col:
-    st.markdown('<div class="panel">', unsafe_allow_html=True)
-    st.markdown('<div class="panel-title"><h3 style="margin:0">Чат</h3></div>', unsafe_allow_html=True)
-
-    q1, q2 = st.columns(2)
-    with q1:
-        if st.button("Краткая сводка", use_container_width=True):
+    with st.container(border=True):
+        st.subheader("Чат")
+        q1, q2 = st.columns(2)
+        if q1.button("Краткая сводка", use_container_width=True):
             st.session_state.pending_query = "Сделай краткую сводку по загруженным источникам в 5 пунктах"
-    with q2:
-        if st.button("Ключевые факты", use_container_width=True):
+        if q2.button("Ключевые факты", use_container_width=True):
             st.session_state.pending_query = "Какие ключевые факты есть в загруженных источниках?"
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
 
-            citations = message.get("citations", [])
-            if citations:
-                chips = []
-                for idx, cite in enumerate(citations, start=1):
-                    tip = html.escape(f"{cite['source_name']} | {cite['snippet']}")
-                    label = html.escape(cite["source_name"])
-                    chips.append(f"<span class='src-chip' title='{tip}'>[{idx}] {label}</span>")
-                st.markdown("<div class='src-wrap'>" + "".join(chips) + "</div>", unsafe_allow_html=True)
+                citations = message.get("citations", [])
+                if citations:
+                    chips = []
+                    for idx, cite in enumerate(citations, start=1):
+                        tip = html.escape(f"{cite['source_name']} | {cite['snippet']}")
+                        label = html.escape(cite["source_name"])
+                        chips.append(f"<span class='src-chip' title='{tip}'>[{idx}] {label}</span>")
+                    st.markdown("<div class='src-wrap'>" + "".join(chips) + "</div>", unsafe_allow_html=True)
 
-            for image_uri in message.get("images", []):
-                p = Path(image_uri)
-                if p.exists():
-                    st.image(str(p), caption=p.name)
+                for image_uri in message.get("images", []):
+                    p = Path(image_uri)
+                    if p.exists():
+                        st.image(str(p), caption=p.name)
 
-    if st.session_state.pending_query:
-        _run_query(st.session_state.pending_query)
-        st.session_state.pending_query = None
-        st.rerun()
+        if st.session_state.pending_query:
+            _run_query(st.session_state.pending_query)
+            st.session_state.pending_query = None
+            st.rerun()
 
-    query = st.chat_input("Спросите по вашим источникам")
-    if query:
-        _run_query(query)
-        st.rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
+        query = st.chat_input("Спросите по вашим источникам")
+        if query:
+            _run_query(query)
+            st.rerun()
 
 with right_col:
     if st.session_state.studio_collapsed:
-        st.markdown('<div class="panel">', unsafe_allow_html=True)
-        st.caption("Панель студии скрыта")
-        st.markdown('</div>', unsafe_allow_html=True)
+        if st.button("Студия ◀", use_container_width=True):
+            st.session_state.studio_collapsed = False
+            st.rerun()
     else:
-        st.markdown('<div class="panel">', unsafe_allow_html=True)
-        st.markdown('<div class="panel-title"><h3 style="margin:0">Студия</h3></div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            r1, r2 = st.columns([6, 1])
+            r1.subheader("Студия")
+            if r2.button("▶", help="Свернуть", use_container_width=True):
+                st.session_state.studio_collapsed = True
+                st.rerun()
 
-        mode_cols_1 = st.columns(2)
-        if mode_cols_1[0].button("Аудиопересказ", use_container_width=True):
-            st.info("Режим в разработке")
-        if mode_cols_1[1].button("Конспект", use_container_width=True):
-            st.info("Режим в разработке")
+            mode_cols_1 = st.columns(2)
+            if mode_cols_1[0].button("Аудиопересказ", use_container_width=True):
+                st.info("Режим в разработке")
+            if mode_cols_1[1].button("Конспект", use_container_width=True):
+                st.info("Режим в разработке")
 
-        mode_cols_2 = st.columns(2)
-        if mode_cols_2[0].button("Карта ментальная", use_container_width=True):
-            st.info("Режим в разработке")
-        if mode_cols_2[1].button("Карточки", use_container_width=True):
-            st.info("Режим в разработке")
+            mode_cols_2 = st.columns(2)
+            if mode_cols_2[0].button("Карта ментальная", use_container_width=True):
+                st.info("Режим в разработке")
+            if mode_cols_2[1].button("Карточки", use_container_width=True):
+                st.info("Режим в разработке")
 
-        mode_cols_3 = st.columns(2)
-        if mode_cols_3[0].button("Презентация", use_container_width=True):
-            st.info("Режим в разработке")
-        if mode_cols_3[1].button("Квиз", use_container_width=True):
-            st.info("Режим в разработке")
+            mode_cols_3 = st.columns(2)
+            if mode_cols_3[0].button("Презентация", use_container_width=True):
+                st.info("Режим в разработке")
+            if mode_cols_3[1].button("Квиз", use_container_width=True):
+                st.info("Режим в разработке")
 
-        st.divider()
+            st.divider()
+            health = "онлайн" if model_manager.healthcheck() else "офлайн"
+            st.markdown(f"**Провайдер:** {settings.model_provider}")
+            st.markdown(f"**Endpoint:** {settings.model_endpoint}")
+            st.markdown(f"**Сервер модели:** {health}")
+            st.markdown(f"**Записей в базе:** {store.count()}")
+            st.markdown(f"**Модель чата:** {settings.chat_model}")
+            st.markdown(f"**Vision-модель:** {settings.vision_model}")
 
-        health = "онлайн" if model_manager.healthcheck() else "офлайн"
-        st.markdown(f"<div class='kpi'><b>Провайдер:</b> {settings.model_provider}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='kpi'><b>Endpoint:</b> {settings.model_endpoint}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='kpi'><b>Сервер модели:</b> {health}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='kpi'><b>Записей в базе:</b> {store.count()}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='kpi'><b>Модель чата:</b> {settings.chat_model}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='kpi'><b>Vision-модель:</b> {settings.vision_model}</div>", unsafe_allow_html=True)
+            if st.button("Проверить сервер модели", use_container_width=True):
+                if model_manager.healthcheck():
+                    st.success("Сервер модели доступен")
+                else:
+                    st.error("Сервер модели недоступен")
 
-        if st.button("Проверить сервер модели", use_container_width=True):
-            if model_manager.healthcheck():
-                st.success("Сервер модели доступен")
-            else:
-                st.error("Сервер модели недоступен")
-
-        st.markdown("<div class='small-muted'>Локальный режим. Без OpenRouter.</div>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+            st.caption("Локальный режим. Без OpenRouter.")
 
 if len(st.session_state.messages) > settings.max_context_messages * 2:
     st.session_state.messages = st.session_state.messages[-settings.max_context_messages * 2 :]
