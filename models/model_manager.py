@@ -3,9 +3,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from models.ollama_client import OllamaClient
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -15,17 +12,25 @@ class LocalModelManager:
         chat_model: str,
         vision_model: str,
         embed_model: str,
-        client: OllamaClient | None = None,
+        client=None,
     ) -> None:
         self.chat_model = chat_model
         self.vision_model = vision_model
         self.embed_model = embed_model
-        self.client = client or OllamaClient()
+        if client is None:
+            raise ValueError("A model client must be provided")
+        self.client = client
         self._mode = "chat"
 
     @property
     def mode(self) -> str:
         return self._mode
+
+    def healthcheck(self) -> bool:
+        try:
+            return self.client.healthcheck()
+        except Exception:
+            return False
 
     def switch_to_vision(self) -> None:
         logger.info("Switching to vision mode. Chat model considered inactive.")

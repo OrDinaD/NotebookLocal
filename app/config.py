@@ -14,6 +14,9 @@ class Settings:
     db_dir: Path
     upload_dir: Path
     extract_dir: Path
+    model_provider: str
+    model_endpoint: str
+    model_api_key: str
     chat_model: str
     vision_model: str
     embed_model: str
@@ -42,8 +45,11 @@ def load_settings(project_root: Path | None = None) -> Settings:
         db_dir=db_dir,
         upload_dir=upload_dir,
         extract_dir=extract_dir,
-        chat_model=os.getenv("RAG_CHAT_MODEL", "llama3.1:8b"),
-        vision_model=os.getenv("RAG_VISION_MODEL", "llava:13b"),
+        model_provider=os.getenv("RAG_MODEL_PROVIDER", "lmstudio"),
+        model_endpoint=os.getenv("RAG_MODEL_ENDPOINT", "http://127.0.0.1:1234"),
+        model_api_key=os.getenv("RAG_MODEL_API_KEY", "lm-studio"),
+        chat_model=os.getenv("RAG_CHAT_MODEL", "google/gemma-4-e4b"),
+        vision_model=os.getenv("RAG_VISION_MODEL", "google/gemma-4-e4b"),
         embed_model=os.getenv("RAG_EMBED_MODEL", "nomic-embed-text"),
         whisper_model=os.getenv("RAG_WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo"),
         top_k=int(os.getenv("RAG_TOP_K", "5")),
